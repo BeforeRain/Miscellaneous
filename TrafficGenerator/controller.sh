@@ -1,12 +1,11 @@
 #!/bin/bash
 #
-# Run TrafficGenerator in a many-to-many fashion and print aggregated results
+# Run TrafficGenerator in a many-to-many fashion and parse aggregated results
 
 # General settings
-USER="weiyu"
 CONTROLLER="192.168.1.51"
-SERVERS=("192.168.1.52")
-CLIENTS=("192.168.1.52")
+SERVERS=("192.168.1.1" "192.168.1.2" "192.168.1.3" "192.168.1.4" "192.168.1.5")
+CLIENTS=("192.168.1.1" "192.168.1.2" "192.168.1.3" "192.168.1.4" "192.168.1.5")
 
 # Local settings
 LOCAL_BASE_DIR="${PWD}"
@@ -23,42 +22,42 @@ CLIENT_PROGRAM="${BASE_DIR}/bin/client"
 FLOW_FILE="${BASE_DIR}/flows.txt"
 PORT=5001
 BANDWIDTH=60
-TIME_IN_SECONDS=20
+TIME_IN_SECONDS=30
 
 
 # Start server programs
 for server in ${SERVERS[@]}; do
-    ssh ${USER}@${server} "${SERVER_PROGRAM} -p ${PORT}" >> /dev/null &
+    ssh ${server} "${SERVER_PROGRAM} -p ${PORT}" >> /dev/null &
 done
 
 # For every client, create a result directory and send the configuration file to it
 for client in ${CLIENTS[@]}; do
     mkdir ${LOCAL_RESULT_DIR}/${client} -p
-    scp ${LOCAL_CONF_FILE} ${USER}@${client}:${CONF_FILE}
+    scp ${LOCAL_CONF_FILE} @${client}:${CONF_FILE} >> /dev/null
 done
 
 # Run client programs and send back flow files to controller afterwards
-run_client_cmd="${CLIENT_PROGRAM} -b ${BANDWIDTH} -t ${TIME_IN_SECONDS} -c ${CONF_FILE} -l ${FLOW_FILE}"
-scp_cmd="scp ${FLOW_FILE} ${USER}@${CONTROLLER}:${LOCAL_RESULT_DIR}/${client}"
 for client in ${CLIENTS[@]}; do
-    ssh ${USER}@${client} "${run_client_cmd}; ${scp_cmd}" >> /dev/null &
+    run_client_cmd="${CLIENT_PROGRAM} -b ${BANDWIDTH} -t ${TIME_IN_SECONDS} -c ${CONF_FILE} -l ${FLOW_FILE}"
+    scp_cmd="scp ${FLOW_FILE} ${CONTROLLER}:${LOCAL_RESULT_DIR}/${client}"
+    ssh ${client} "${run_client_cmd}; ${scp_cmd}" >> /dev/null &
 done
 
 # Wait until all clients have completed running and sent their flow files to controller
 sleep ${TIME_IN_SECONDS}
-while [[ `find ${LOCAL_RESULT_DIR} -type f | wc -l` != ${#CLIENTS[@]} ]] ; do
+while [[ `find ${LOCAL_RESULT_DIR} -type f | wc -l` != ${#CLIENTS[@]} ]]; do
     sleep 1
 done
 
 # Stop server programs
 for server in ${SERVERS[@]}; do
-    ssh ${USER}@${server} "pgrep server | xargs kill"
+    ssh ${server} "pgrep server | xargs kill"
 done
 
 # Aggregate and parse results
 touch ${LOCAL_AGGREGATED_FLOW_FILE}
 for client in ${CLIENTS[@]}; do
-        cat ${LOCAL_RESULT_DIR}/${client}/* >> ${LOCAL_AGGREGATED_FLOW_FILE}
+    cat ${LOCAL_RESULT_DIR}/${client}/* >> ${LOCAL_AGGREGATED_FLOW_FILE}
 done
 python ${LOCAL_RESULT_SCRIPT} ${LOCAL_AGGREGATED_FLOW_FILE}
 
